@@ -40,6 +40,7 @@ from .lehr.heater import HeaterBank
 from .mold.blow import BlowStation
 from .mold.close import MoldCloser
 from .mold.fill import MoldFill
+from .mold.wear import MoldWearMonitor
 from .ns.registry import NamespaceRegistry
 from .ns.topology import Topology, build_default_topology
 from .store.journal import JsonlJournal
@@ -163,6 +164,9 @@ class Platform:
         self.shear = Shear(self.bus, self.config.feeder)
         self.forming = FormingCycle(self.bus)
         self.closer = MoldCloser(self.clock, self.bus, self.config.mold)
+        self.wear = MoldWearMonitor(
+            self.clock, self.bus, self.config.mold, self.config.wear, unit
+        )
         self.blow = BlowStation(self.bus, self.config.mold)
         self.filler = MoldFill(self.bus, self.config.feeder)
 
@@ -197,6 +201,7 @@ class Platform:
             ("feeder", "gob", "gob-former"),
             ("feeder", "shear", "shear-blade"),
             ("mold", "closer", "mold-closer"),
+            ("mold", "wear", "mold-wear-monitor"),
             ("mold", "blow", "blow-station"),
             ("mold", "fill", "mold-cavity"),
             ("lehr", "belt", "lehr-belt"),
@@ -456,6 +461,15 @@ class Platform:
             outcome = self.blow.normal(closure)
             return {"retry": False, "closure": closure.as_dict(), "blow": outcome.as_dict()}
 
+    def replace_mold(self, reason: str = "更换模具") -> dict:
+        """现场换模：重置当前机台的模具寿命跟踪，从新模具的认线期重新起步。"""
+
+        with self._lock:
+            self.wear.replace_mold(reason)
+            assessment = self.wear.last_assessment()
+            return {"reason": reason, "wear": self.wear.snapshot(),
+                    "assessment": assessment.as_dict() if assessment else None}
+
     def reset_lehr(self, reason: str = "退火复位") -> dict:
         """退火告警复位并释放闩锁，随后让网带与加热器回到正常档。"""
 
@@ -587,6 +601,7 @@ class Platform:
             "forehearth_above_gate_min": self.forehearth_temp.is_above_gate_min(),
             "closure": self.closer.snapshot(),
             "mold_closed": self.closer.is_closed(),
+            "mold_wear": self.wear.snapshot(),
             "anneal_alarm": self.alarm.snapshot(),
             "anneal_latch": self.latch.snapshot(),
             "zone_revision": self.zones.revision,
@@ -634,6 +649,7 @@ class Platform:
                 "/api/burner/trip",
                 "/api/forehearth/gate",
                 "/api/mold/blow",
+                "/api/mold/replace",
                 "/api/lehr/reset",
                 "/api/scale/calibrate",
                 "/api/furnace/clear",
@@ -686,6 +702,7 @@ class Platform:
             "forming": self.forming.snapshot(),
             "mold": {
                 "closer": self.closer.snapshot(),
+                "wear": self.wear.snapshot(),
                 "blow": self.blow.snapshot(),
                 "fill": self.filler.snapshot(),
             },
@@ -726,6 +743,7 @@ def build_platform(
             temp=effective.temp,
             feeder=effective.feeder,
             mold=effective.mold,
+            wear=effective.wear,
             lehr=effective.lehr,
             batch=effective.batch,
             pages=effective.pages,

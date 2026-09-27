@@ -87,6 +87,7 @@ def _operations(path: str) -> str:
             "<button onclick=\"act('/api/forehearth/gate', {path: 'warm_up'})\">开闸板</button>"
             "<button onclick=\"act('/api/forehearth/gate', {path: 'reheat'})\">再升温开闸板</button>"
             "<button onclick=\"act('/api/mold/blow', {path: 'cycle'})\">吹气</button>"
+            "<button class='warn' onclick=\"act('/api/mold/replace', {reason: '控制台换模'})\">更换模具</button>"
             "<button onclick=\"act('/api/lehr/reset', {})\">退火复位</button>"
             "<button onclick=\"act('/api/cycle', {load: 0.85})\">推进周期</button></section>"
             "<section><h2>顺序</h2>"

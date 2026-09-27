@@ -252,6 +252,46 @@ class MoldLimits:
 
 
 @dataclass(frozen=True)
+class WearLimits:
+    """模具磨损跟踪与换模窗口约束（按每台机各自的合模力历史）。"""
+
+    baseline_samples: int
+    min_samples: int
+    trend_window: int
+    confirm_samples: int
+    clear_samples: int
+    watch_fraction: float
+    window_fraction: float
+    critical_fraction: float
+    lead_margin_cycles: int
+
+    @classmethod
+    def from_mapping(cls, section: Mapping[str, Any]) -> "WearLimits":
+        limits = cls(
+            baseline_samples=int(_number(section, "baseline_samples", minimum=2.0)),
+            min_samples=int(_number(section, "min_samples", minimum=3.0)),
+            trend_window=int(_number(section, "trend_window", minimum=3.0)),
+            confirm_samples=int(_number(section, "confirm_samples", minimum=1.0)),
+            clear_samples=int(_number(section, "clear_samples", minimum=1.0)),
+            watch_fraction=_number(section, "watch_fraction", minimum=0.0),
+            window_fraction=_number(section, "window_fraction", minimum=0.0),
+            critical_fraction=_number(section, "critical_fraction", minimum=0.0),
+            lead_margin_cycles=int(_number(section, "lead_margin_cycles", minimum=0.0)),
+        )
+        if not limits.baseline_samples <= limits.min_samples <= limits.trend_window:
+            raise ConfigError(
+                "磨损跟踪必须满足 基线样本数 ≤ 最少样本数 ≤ 趋势窗口",
+                component="config",
+            )
+        if not 0.0 < limits.watch_fraction < limits.window_fraction < limits.critical_fraction < 1.0:
+            raise ConfigError(
+                "磨损比例必须满足 0 < 关注值 < 换模窗口值 < 临界值 < 1",
+                component="config",
+            )
+        return limits
+
+
+@dataclass(frozen=True)
 class LehrLimits:
     """退火窑网带与加热器约束。"""
 
@@ -339,6 +379,7 @@ class PlatformConfig:
     temp: TempLimits
     feeder: FeederLimits
     mold: MoldLimits
+    wear: WearLimits
     lehr: LehrLimits
     batch: BatchLimits
     pages: tuple[str, ...] = field(default_factory=tuple)
@@ -374,6 +415,7 @@ class PlatformConfig:
             temp=TempLimits.from_mapping(_section(limits, "temp")),
             feeder=FeederLimits.from_mapping(_section(limits, "feeder")),
             mold=MoldLimits.from_mapping(_section(limits, "mold")),
+            wear=WearLimits.from_mapping(_section(limits, "mold_wear")),
             lehr=LehrLimits.from_mapping(_section(limits, "lehr")),
             batch=BatchLimits.from_mapping(_section(limits, "batch")),
             pages=tuple(pages),
@@ -437,6 +479,17 @@ def default_config() -> PlatformConfig:
             blow_pressure_kpa=320.0,
             blow_min_ms=180.0,
             reopen_delay_s=4.0,
+        ),
+        wear=WearLimits(
+            baseline_samples=12,
+            min_samples=20,
+            trend_window=30,
+            confirm_samples=3,
+            clear_samples=6,
+            watch_fraction=0.35,
+            window_fraction=0.55,
+            critical_fraction=0.85,
+            lead_margin_cycles=200,
         ),
         lehr=LehrLimits(
             belt_speed_m_per_min=8.4,
@@ -503,6 +556,17 @@ def config_to_mapping(cfg: PlatformConfig) -> dict:
                 "blow_pressure_kpa": cfg.mold.blow_pressure_kpa,
                 "blow_min_ms": cfg.mold.blow_min_ms,
                 "reopen_delay_s": cfg.mold.reopen_delay_s,
+            },
+            "mold_wear": {
+                "baseline_samples": cfg.wear.baseline_samples,
+                "min_samples": cfg.wear.min_samples,
+                "trend_window": cfg.wear.trend_window,
+                "confirm_samples": cfg.wear.confirm_samples,
+                "clear_samples": cfg.wear.clear_samples,
+                "watch_fraction": cfg.wear.watch_fraction,
+                "window_fraction": cfg.wear.window_fraction,
+                "critical_fraction": cfg.wear.critical_fraction,
+                "lead_margin_cycles": cfg.wear.lead_margin_cycles,
             },
             "lehr": {
                 "belt_speed_m_per_min": cfg.lehr.belt_speed_m_per_min,

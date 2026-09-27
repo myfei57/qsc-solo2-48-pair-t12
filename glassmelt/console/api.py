@@ -94,6 +94,10 @@ class ConsoleAPI:
         path = str(payload.get("path", "cycle"))
         return self._guard(lambda: self.platform.blow_mold(path=path))
 
+    def replace_mold(self, payload: dict) -> dict:
+        reason = str(payload.get("reason", "控制台触发的换模"))
+        return self._guard(lambda: self.platform.replace_mold(reason))
+
     def reset_lehr(self, payload: dict) -> dict:
         reason = str(payload.get("reason", "控制台触发的退火复位"))
         return self._guard(lambda: self.platform.reset_lehr(reason=reason))

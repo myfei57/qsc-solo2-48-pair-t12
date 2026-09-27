@@ -105,6 +105,8 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(self.api.open_gate(payload))
             elif parsed.path == "/api/mold/blow":
                 self._send_json(self.api.blow(payload))
+            elif parsed.path == "/api/mold/replace":
+                self._send_json(self.api.replace_mold(payload))
             elif parsed.path == "/api/lehr/reset":
                 self._send_json(self.api.reset_lehr(payload))
             elif parsed.path == "/api/burner/trip":
