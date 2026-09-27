@@ -121,6 +121,24 @@ def test_unknown_routes_are_reported(console):
     assert status == 404
 
 
+def test_mold_wear_change_and_setpoint_endpoints(console):
+    _server, base = console
+    _post(f"{base}/api/start")
+    status, wear = _get(f"{base}/api/mold/wear")
+    assert status == 200
+    assert "critical_force_kn" in wear
+    assert "stations" in wear
+    status, changed = _post(f"{base}/api/mold/change", {"reason": "测试换模"})
+    assert status == 200 and changed["ok"] is True
+    assert changed["result"]["wear"]["phase"] == "warming"
+    status, moved = _post(f"{base}/api/mold/setpoint", {"setpoint_kn": 50.0})
+    assert status == 200 and moved["ok"] is True
+    assert moved["result"]["setpoint_kn"] == 50.0
+    status, bad = _post(f"{base}/api/mold/setpoint", {"setpoint_kn": 1.0})
+    assert status == 200 and bad["ok"] is False
+    assert bad["error"]["component"] == "mold"
+
+
 def test_console_api_wraps_zone_and_calibration_actions(platform):
     api = ConsoleAPI(platform)
     rebuilt = api.rebuild_zone_map({"reason": "接口测试"})

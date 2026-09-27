@@ -40,6 +40,7 @@ from .lehr.heater import HeaterBank
 from .mold.blow import BlowStation
 from .mold.close import MoldCloser
 from .mold.fill import MoldFill
+from .mold.wear import ClampWearMonitor
 from .ns.registry import NamespaceRegistry
 from .ns.topology import Topology, build_default_topology
 from .store.journal import JsonlJournal
@@ -163,6 +164,12 @@ class Platform:
         self.shear = Shear(self.bus, self.config.feeder)
         self.forming = FormingCycle(self.bus)
         self.closer = MoldCloser(self.clock, self.bus, self.config.mold)
+        self.wear = ClampWearMonitor(
+            self.clock,
+            self.bus,
+            self.config.mold_wear,
+            nominal_close_kn=self.config.mold.close_min_force_kn * 1.12,
+        )
         self.blow = BlowStation(self.bus, self.config.mold)
         self.filler = MoldFill(self.bus, self.config.feeder)
 
@@ -456,6 +463,34 @@ class Platform:
             outcome = self.blow.normal(closure)
             return {"retry": False, "closure": closure.as_dict(), "blow": outcome.as_dict()}
 
+    def change_mold(self, reason: str = "更换模具", station: str | None = None) -> dict:
+        """换模：作废该工位的合模力基线与退化结论，从跑合期重新累积。"""
+
+        with self._lock:
+            target = station or self.closer.station
+            state = self.wear.reset(target, reason=reason)
+            return {"station": target, "wear": state.as_dict()}
+
+    def adjust_clamp_setpoint(self, setpoint_kn: float, reason: str = "调整合模设定") -> dict:
+        """调整合模设定档；退化监视器据新档重新攒基线，不把调机算成磨损。"""
+
+        with self._lock:
+            setpoint = self.closer.adjust_setpoint(setpoint_kn, reason=reason)
+            wear = self.wear.last_state(self.closer.station)
+            return {
+                "setpoint_kn": round(setpoint, 3),
+                "wear": wear.as_dict() if wear else None,
+            }
+
+    def mold_wear_report(self, station: str | None = None) -> dict:
+        """给出一个或全部工位的合模力退化与换模窗口结论。"""
+
+        with self._lock:
+            if station is not None:
+                state = self.wear.last_state(station)
+                return {"station": station, "wear": state.as_dict() if state else None}
+            return self.wear.snapshot()
+
     def reset_lehr(self, reason: str = "退火复位") -> dict:
         """退火告警复位并释放闩锁，随后让网带与加热器回到正常档。"""
 
@@ -587,6 +622,7 @@ class Platform:
             "forehearth_above_gate_min": self.forehearth_temp.is_above_gate_min(),
             "closure": self.closer.snapshot(),
             "mold_closed": self.closer.is_closed(),
+            "mold_wear": self.wear.snapshot(),
             "anneal_alarm": self.alarm.snapshot(),
             "anneal_latch": self.latch.snapshot(),
             "zone_revision": self.zones.revision,
@@ -634,6 +670,9 @@ class Platform:
                 "/api/burner/trip",
                 "/api/forehearth/gate",
                 "/api/mold/blow",
+                "/api/mold/change",
+                "/api/mold/setpoint",
+                "/api/mold/wear",
                 "/api/lehr/reset",
                 "/api/scale/calibrate",
                 "/api/furnace/clear",
@@ -688,6 +727,7 @@ class Platform:
                 "closer": self.closer.snapshot(),
                 "blow": self.blow.snapshot(),
                 "fill": self.filler.snapshot(),
+                "wear": self.wear.snapshot(),
             },
             "anneal": {
                 "alarm": self.alarm.snapshot(),
@@ -726,6 +766,7 @@ def build_platform(
             temp=effective.temp,
             feeder=effective.feeder,
             mold=effective.mold,
+            mold_wear=effective.mold_wear,
             lehr=effective.lehr,
             batch=effective.batch,
             pages=effective.pages,

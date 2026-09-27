@@ -94,6 +94,32 @@ class ConsoleAPI:
         path = str(payload.get("path", "cycle"))
         return self._guard(lambda: self.platform.blow_mold(path=path))
 
+    def mold_wear(self, payload: dict | None = None) -> dict:
+        """合模力退化与换模窗口；给 station 时只查一台机。"""
+
+        station = (payload or {}).get("station")
+        return self.platform.mold_wear_report(station=str(station) if station else None)
+
+    def change_mold(self, payload: dict) -> dict:
+        """登记换模，作废该工位退化基线，从跑合期重新累积。"""
+
+        reason = str(payload.get("reason", "控制台登记换模"))
+        station = payload.get("station")
+        return self._guard(
+            lambda: self.platform.change_mold(
+                reason=reason, station=str(station) if station else None
+            )
+        )
+
+    def adjust_setpoint(self, payload: dict) -> dict:
+        """调整合模设定档；退化监视按新档重新攒基线。"""
+
+        setpoint = float(payload.get("setpoint_kn", 0.0))
+        reason = str(payload.get("reason", "控制台调整合模设定"))
+        return self._guard(
+            lambda: self.platform.adjust_clamp_setpoint(setpoint, reason=reason)
+        )
+
     def reset_lehr(self, payload: dict) -> dict:
         reason = str(payload.get("reason", "控制台触发的退火复位"))
         return self._guard(lambda: self.platform.reset_lehr(reason=reason))

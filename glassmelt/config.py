@@ -252,6 +252,50 @@ class MoldLimits:
 
 
 @dataclass(frozen=True)
+class MoldWearLimits:
+    """合模力退化与换模窗口约束。
+
+    退化以"换模后基线峰值力 → 临界密封力"为满量程：峰值力跌到临界密封力
+    附近时，分模缝下一次受压就会开始跑料。窗口阈值在临界之前留出安排换模
+    的提前量；跑合模次、基线模次与确认模次用于压住换模初期和样本不足时的
+    误报。
+    """
+
+    critical_force_kn: float
+    watch_wear_pct: float
+    window_wear_pct: float
+    warmup_shots: int
+    baseline_shots: int
+    confirm_shots: int
+    setpoint_shift_pct: float
+
+    @classmethod
+    def from_mapping(
+        cls, section: Mapping[str, Any], close_min_force_kn: float
+    ) -> "MoldWearLimits":
+        limits = cls(
+            critical_force_kn=_number(section, "critical_force_kn", minimum=0.0),
+            watch_wear_pct=_number(section, "watch_wear_pct", minimum=0.0),
+            window_wear_pct=_number(section, "window_wear_pct", minimum=0.0),
+            warmup_shots=int(_number(section, "warmup_shots", minimum=1.0)),
+            baseline_shots=int(_number(section, "baseline_shots", minimum=2.0)),
+            confirm_shots=int(_number(section, "confirm_shots", minimum=1.0)),
+            setpoint_shift_pct=_number(section, "setpoint_shift_pct", minimum=0.0),
+        )
+        if not limits.critical_force_kn < close_min_force_kn:
+            raise ConfigError(
+                "临界密封力必须小于合模到位下限，否则到位即临界，窗口无意义",
+                component="config",
+            )
+        if not 0.0 < limits.watch_wear_pct < limits.window_wear_pct < 100.0:
+            raise ConfigError(
+                "退化阈值必须满足 0 < 观察阈值 < 换模窗口阈值 < 100",
+                component="config",
+            )
+        return limits
+
+
+@dataclass(frozen=True)
 class LehrLimits:
     """退火窑网带与加热器约束。"""
 
@@ -339,6 +383,7 @@ class PlatformConfig:
     temp: TempLimits
     feeder: FeederLimits
     mold: MoldLimits
+    mold_wear: MoldWearLimits
     lehr: LehrLimits
     batch: BatchLimits
     pages: tuple[str, ...] = field(default_factory=tuple)
@@ -364,6 +409,17 @@ class PlatformConfig:
             if not isinstance(page, str) or not page.strip():
                 raise ConfigError("pages 中的页面名必须是非空字符串", component="config")
 
+        mold = MoldLimits.from_mapping(_section(limits, "mold"))
+        mold_wear_section = limits.get("mold_wear")
+        if mold_wear_section is None:
+            mold_wear = default_mold_wear(mold.close_min_force_kn)
+        elif not isinstance(mold_wear_section, Mapping):
+            raise ConfigError("配置段落 'mold_wear' 必须是映射", component="config")
+        else:
+            mold_wear = MoldWearLimits.from_mapping(
+                mold_wear_section, mold.close_min_force_kn
+            )
+
         return cls(
             name=name,
             project_id=project_id,
@@ -373,7 +429,8 @@ class PlatformConfig:
             forehearth=ForehearthLimits.from_mapping(_section(limits, "forehearth")),
             temp=TempLimits.from_mapping(_section(limits, "temp")),
             feeder=FeederLimits.from_mapping(_section(limits, "feeder")),
-            mold=MoldLimits.from_mapping(_section(limits, "mold")),
+            mold=mold,
+            mold_wear=mold_wear,
             lehr=LehrLimits.from_mapping(_section(limits, "lehr")),
             batch=BatchLimits.from_mapping(_section(limits, "batch")),
             pages=tuple(pages),
@@ -390,6 +447,20 @@ def load_config(path: str) -> PlatformConfig:
     if not isinstance(raw, Mapping):
         raise ConfigError("配置文件顶层必须是映射", component="config")
     return PlatformConfig.from_mapping(raw)
+
+
+def default_mold_wear(close_min_force_kn: float = 42.0) -> MoldWearLimits:
+    """按合模到位下限派生退化判据；临界密封力取到位下限的九成。"""
+
+    return MoldWearLimits(
+        critical_force_kn=round(close_min_force_kn * 0.9, 3),
+        watch_wear_pct=55.0,
+        window_wear_pct=80.0,
+        warmup_shots=50,
+        baseline_shots=30,
+        confirm_shots=3,
+        setpoint_shift_pct=5.0,
+    )
 
 
 def default_config() -> PlatformConfig:
@@ -438,6 +509,7 @@ def default_config() -> PlatformConfig:
             blow_min_ms=180.0,
             reopen_delay_s=4.0,
         ),
+        mold_wear=default_mold_wear(42.0),
         lehr=LehrLimits(
             belt_speed_m_per_min=8.4,
             belt_slow_m_per_min=4.2,
@@ -503,6 +575,15 @@ def config_to_mapping(cfg: PlatformConfig) -> dict:
                 "blow_pressure_kpa": cfg.mold.blow_pressure_kpa,
                 "blow_min_ms": cfg.mold.blow_min_ms,
                 "reopen_delay_s": cfg.mold.reopen_delay_s,
+            },
+            "mold_wear": {
+                "critical_force_kn": cfg.mold_wear.critical_force_kn,
+                "watch_wear_pct": cfg.mold_wear.watch_wear_pct,
+                "window_wear_pct": cfg.mold_wear.window_wear_pct,
+                "warmup_shots": cfg.mold_wear.warmup_shots,
+                "baseline_shots": cfg.mold_wear.baseline_shots,
+                "confirm_shots": cfg.mold_wear.confirm_shots,
+                "setpoint_shift_pct": cfg.mold_wear.setpoint_shift_pct,
             },
             "lehr": {
                 "belt_speed_m_per_min": cfg.lehr.belt_speed_m_per_min,

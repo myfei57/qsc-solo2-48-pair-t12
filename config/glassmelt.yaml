@@ -36,6 +36,20 @@ limits:
     blow_pressure_kpa: 320.0
     blow_min_ms: 180.0
     reopen_delay_s: 4.0
+  mold_wear:
+    # 临界密封力：峰值合模力跌到这附近，分模缝下一次受压就会跑料。
+    critical_force_kn: 37.8
+    # 退化百分比（基线力→临界力为满量程）达到观察档开始盯，达到窗口档
+    # 就提前安排换模，不等真跑料。
+    watch_wear_pct: 55.0
+    window_wear_pct: 80.0
+    # 刚换模的跑合模次不报；跑合后要攒够的基线模次；恶化需连续确认的模次。
+    warmup_shots: 50
+    baseline_shots: 30
+    confirm_shots: 3
+    # 合模设定档相对基线设定偏移超过该百分比，判定为调了设定而非磨损，本窗
+    # 冻结退化结论并按新档重新攒基线。
+    setpoint_shift_pct: 5.0
   lehr:
     belt_speed_m_per_min: 8.4
     belt_slow_m_per_min: 4.2

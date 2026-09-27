@@ -84,6 +84,9 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(self.api.journal(segment=segment, limit=limit))
             elif parsed.path == "/api/readiness":
                 self._send_json(self.api.readiness())
+            elif parsed.path == "/api/mold/wear":
+                station = (query.get("station") or [None])[0]
+                self._send_json(self.api.mold_wear({"station": station} if station else {}))
             elif parsed.path == "/":
                 self._send_html(render_page("overview", self.platform))
             elif parsed.path.strip("/") in PAGE_TITLES:
@@ -105,6 +108,10 @@ class ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(self.api.open_gate(payload))
             elif parsed.path == "/api/mold/blow":
                 self._send_json(self.api.blow(payload))
+            elif parsed.path == "/api/mold/change":
+                self._send_json(self.api.change_mold(payload))
+            elif parsed.path == "/api/mold/setpoint":
+                self._send_json(self.api.adjust_setpoint(payload))
             elif parsed.path == "/api/lehr/reset":
                 self._send_json(self.api.reset_lehr(payload))
             elif parsed.path == "/api/burner/trip":
